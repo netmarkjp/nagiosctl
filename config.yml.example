@@ -1,0 +1,20 @@
+nagios:
+  - url: https://nagios01.example.com/nagios/
+    username: nagiosadmin
+    password: nagiosadmin
+    auth_type: digest
+    ssh:
+        hostname: nagios01.example.com
+        username: sshusername
+        password: sshpassword
+    cmdfile: /usr/local/nagios/var/rw/nagios.cmd
+  - url: https://nagios02.example.com/nagios/
+    username: nagiosadmin
+    password: nagiosadmin
+    auth_type: digest
+    ssh:
+        hostname: nagios02.example.com
+        username: sshusername
+        password: sshpassword
+    cmdfile: /usr/local/nagios/var/rw/nagios.cmd
+# debug: False

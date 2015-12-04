@@ -1,0 +1,314 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+
+from logging import DEBUG
+from logging import StreamHandler
+from logging import getLogger
+import click
+import json
+import paramiko
+import requests
+import yaml
+
+logger = getLogger(__name__)
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    if ctx.invoked_subcommand is None:
+        print ctx.get_help()
+
+
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+def list_hostgroup(config):
+    _config = _load_config(config)
+    nagios = _config["nagios"][0]
+    for hostgroup in _retrive_hostgroups(url=nagios["url"],
+                                         username=nagios["username"],
+                                         password=nagios["password"],
+                                         auth_type=nagios["auth_type"]):
+        print hostgroup
+
+
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.argument("hostgroup", nargs=1)
+def list_host(config, hostgroup):
+    _config = _load_config(config)
+    nagios = _config["nagios"][0]
+    for host in _retrive_hosts(url=nagios["url"],
+                               username=nagios["username"],
+                               password=nagios["password"],
+                               auth_type=nagios["auth_type"],
+                               hostgroup=hostgroup):
+        print host
+
+
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.option("-o", "--output", type=click.File("w"), default="-")
+@click.argument("hostgroup", nargs=1)
+@click.argument("host", nargs=-1)
+def save_notification(config, output, hostgroup, host):
+    _config = _load_config(config)
+    nagios = _config["nagios"][0]
+    if host:
+        host_notifications = []
+        service_notifications = []
+        for h in host:
+            logger.debug("saving notifications for %s", h)
+            host_notification = _retrive_host_notification(url=nagios["url"],
+                                                           username=nagios[
+                                                               "username"],
+                                                           password=nagios[
+                                                               "password"],
+                                                           auth_type=nagios[
+                                                               "auth_type"],
+                                                           host=h)
+            host_notifications.append({h: host_notification})
+
+            service_notifications_by_host = _retrive_service_notifications_by_host(url=nagios["url"],
+                                                                                   username=nagios[
+                                                                                       "username"],
+                                                                                   password=nagios[
+                                                                                       "password"],
+                                                                                   auth_type=nagios[
+                                                                                       "auth_type"],
+                                                                                   host=h)
+            service_notifications.append({h: service_notifications_by_host})
+        output.write(yaml.dump({"host_notifications": sorted(host_notifications),
+                                "service_notifications": sorted(service_notifications)}))
+    else:
+        host_notifications = _retrive_host_notifications(url=nagios["url"],
+                                                         username=nagios[
+                                                             "username"],
+                                                         password=nagios[
+                                                             "password"],
+                                                         auth_type=nagios[
+                                                             "auth_type"],
+                                                         hostgroup=hostgroup)
+        service_notifications = _retrive_service_notifications_by_hostgroup(url=nagios["url"],
+                                                                            username=nagios[
+                                                                                "username"],
+                                                                            password=nagios[
+                                                                                "password"],
+                                                                            auth_type=nagios[
+                                                                                "auth_type"],
+                                                                            hostgroup=hostgroup)
+        output.write(yaml.dump({"host_notifications": host_notifications,
+                                "service_notifications": service_notifications}))
+
+
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.option("-i", "--infile", type=click.File("r"), default="-")
+def restore_notification(config, infile):
+    _config = _load_config(config)
+    nagioses = _config["nagios"]
+    notifications = yaml.load(infile)
+    host_notifications = notifications["host_notifications"]
+    service_notifications = notifications["service_notifications"]
+
+    logger.debug("host_notifications: %s", host_notifications)
+    logger.debug("service_notifications: %s", service_notifications)
+
+    for nagios in nagioses:
+        ssh_config = nagios["ssh"]
+        logger.info("connecting to %s", ssh_config.get("hostname"))
+
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(**ssh_config)
+
+        command = "uname -a"
+        logger.info("exec_command: %s", command)
+        stdin, stdout, stderr = client.exec_command(command)  # TODO
+        logger.debug("\n".join(stdout.readlines()))
+
+        errlines = stderr.readlines()
+        if len(errlines) > 0:
+            logger.error("\n".join(errlines))
+
+        client.close()
+
+
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.option("-o", "--output", type=click.File("w"), default="-")
+@click.argument("hostgroup", nargs=1)
+@click.argument("host", nargs=-1)
+def disable_notification(config, output, hostgroup, host):
+    # TODO
+    pass
+
+
+def _load_config(config):
+    _config = yaml.load(config)
+
+    handler = StreamHandler()
+    debug = _config.get("debug")
+    if debug:
+        handler.setLevel(DEBUG)
+        logger.setLevel(DEBUG)
+    logger.addHandler(handler)
+
+    return _config
+
+
+def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/objectjson.cgi" % (url)
+    payload = {"query": "hostgrouplist", "details": "false"}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json.", r.text)
+    return r.json()["data"]["hostgrouplist"]
+
+
+def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgroup=None):
+    logger.debug("hostgroup: %s", hostgroup)
+    if not hostgroup:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/objectjson.cgi" % (url)
+    payload = {"query": "hostgroup", "hostgroup": hostgroup}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json.", r.text)
+    return r.json()["data"]["hostgroup"]["members"]
+
+
+def _retrive_host_notifications(url="", username="", password="", auth_type="basic", hostgroup=None):
+    logger.debug("hostgroup: %s", hostgroup)
+    if not hostgroup:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/statusjson.cgi" % (url)
+    payload = {"query": "hostlist", "hostgroup": hostgroup, "details": "true"}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json.", r.text)
+    host_list = []
+    for hostname, data in r.json()["data"]["hostlist"].iteritems():
+        host_list.append({hostname: data["notifications_enabled"]})
+
+    return sorted(host_list)
+
+
+def _retrive_service_notifications_by_hostgroup(url="", username="", password="", auth_type="basic", hostgroup=None):
+    logger.debug("hostgroup: %s", hostgroup)
+    if not hostgroup:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/statusjson.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostgroup": hostgroup, "details": "true"}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+        hosts = _retrive_hosts(url, username, password, auth_type, hostgroup)
+        host_list = []
+        for host in hosts:
+            try:
+                host_list.append({host: _retrive_service_notifications_by_host(
+                    url, username, password, auth_type, host)})
+            except Exception as e:
+                logger.error(
+                    "failed to retrive service notifications for %s %s", host, e)
+        return sorted(host_list)
+
+    host_list = []
+    try:
+        for hostname, data in r.json()["data"]["servicelist"].iteritems():
+            services = []
+            for k, v in data.iteritems():
+                services.append({k: v["notifications_enabled"]})
+            host_list.append({hostname: sorted(services)})
+    except KeyError as e:
+        logger.error(type(e))
+        logger.error(e)
+        logger.error(r.text)
+
+    return sorted(host_list)
+
+
+def _retrive_host_notification(url="", username="", password="", auth_type="basic", host=None):
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/statusjson.cgi" % (url)
+    payload = {"query": "host", "hostname": host}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+        return
+
+    return json.loads(r.text)["data"]["host"]["notifications_enabled"]
+
+
+def _retrive_service_notifications_by_host(url="", username="", password="", auth_type="basic", host=None):
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/statusjson.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostname": host, "details": "true"}
+    logger.debug("retriving from %s", full_url)
+    r = requests.get(full_url, params=payload, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+        return
+    services = []
+    try:
+        for k, v in json.loads(r.text)["data"]["servicelist"][host].iteritems():
+            services.append({k: v["notifications_enabled"]})
+    except KeyError as e:
+        logger.error(type(e))
+        logger.error(e)
+        logger.error(r.text)
+
+    return sorted(services)
+
+
+if __name__ == "__main__":
+    cli()
