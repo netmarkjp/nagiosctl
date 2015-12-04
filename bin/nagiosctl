@@ -6,9 +6,11 @@ from logging import DEBUG
 from logging import StreamHandler
 from logging import getLogger
 import click
+import datetime
 import json
 import paramiko
 import requests
+import time
 import yaml
 
 logger = getLogger(__name__)
@@ -124,9 +126,11 @@ def restore_notification(config, infile):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(**ssh_config)
 
-        command = "uname -a"
+        nagios_command_string = _generate_nagios_command_string(notifications)
+        logger.debug(nagios_command_string)
+        command = "echo '%s' >> %s" % (nagios_command_string, nagios["cmdfile"])
         logger.info("exec_command: %s", command)
-        stdin, stdout, stderr = client.exec_command(command)  # TODO
+        stdin, stdout, stderr = client.exec_command(command)
         logger.debug("\n".join(stdout.readlines()))
 
         errlines = stderr.readlines()
@@ -142,8 +146,30 @@ def restore_notification(config, infile):
 @click.argument("hostgroup", nargs=1)
 @click.argument("host", nargs=-1)
 def disable_notification(config, output, hostgroup, host):
-    # TODO
-    pass
+    _config = _load_config(config)
+    for nagios in _config["nagios"]:
+        if host:
+            # specified host
+            for h in host:
+                _disable_notifications_for_all_services_on_host(url=nagios["url"],
+                                                                username=nagios[
+                                                                    "username"],
+                                                                password=nagios[
+                                                                    "password"],
+                                                                auth_type=nagios[
+                                                                    "auth_type"],
+                                                                host=h)
+
+        else:
+            # hostgroup
+            _disable_notifications_for_all_services_on_hostgroup(url=nagios["url"],
+                                                                 username=nagios[
+                                                                     "username"],
+                                                                 password=nagios[
+                                                                     "password"],
+                                                                 auth_type=nagios[
+                                                                     "auth_type"],
+                                                                 hostgroup=hostgroup)
 
 
 def _load_config(config):
@@ -309,6 +335,55 @@ def _retrive_service_notifications_by_host(url="", username="", password="", aut
 
     return sorted(services)
 
+
+def _disable_notifications_for_all_services_on_hostgroup(url="", username="", password="", auth_type="basic", hostgroup=None):
+    logger.debug("hostgroup: %s", hostgroup)
+    if not hostgroup:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostname": host, "details": "true"}
+    data = {"cmd_typ": 64, "cmd_mod": 2, "hostgroup": hostgroup, "ahas": 1}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _generate_nagios_command_string(data):
+    command_string = []
+    t = int(time.mktime(datetime.datetime.now().timetuple()))
+    # host notification
+    for val in data["host_notifications"]:
+        hostname = val.keys()[0]
+        enabled = val.values()[0]
+        if enabled:
+            command_string.append(
+                "[%s] ENABLE_HOST_NOTIFICATIONS;%s" % (t, hostname))
+        else:
+            command_string.append(
+                "[%s] DISABLE_HOST_NOTIFICATIONS;%s" % (t, hostname))
+    # service notification
+    for val in data["service_notifications"]:
+        for hostname, services in val.iteritems():
+            for service in services:
+                servicename = service.keys()[0]
+                enabled = service.values()[0]
+                if enabled:
+                    command_string.append(
+                        "[%s] ENABLE_SVC_NOTIFICATIONS;%s;%s" % (t, hostname, servicename))
+                else:
+                    command_string.append(
+                        "[%s] DISABLE_SVC_NOTIFICATIONS;%s;%s" % (t, hostname, servicename))
+    return "\n".join(command_string)
 
 if __name__ == "__main__":
     cli()
