@@ -12,8 +12,40 @@ import paramiko
 import requests
 import time
 import yaml
+import shelve
+import pickle
+import hashlib
+import base64
 
 logger = getLogger(__name__)
+
+
+def memoize(function):
+    cachefile = './nagiosctl.cache'
+
+    def _memoize(*args, **kw):
+        key = _get_key(function, *args, **kw)
+        storage = shelve.open(cachefile)
+        value = None
+        if key in storage:
+            value = storage[key]
+        else:
+            value = storage[key] = function(*args, **kw)
+        storage.close()
+        return value
+    return _memoize
+
+
+def _get_key(function, *args, **kw):
+        string = pickle.dumps((function.__name__, args, kw))
+        m = hashlib.sha1()
+        digest = None
+        if m is not None:
+            m.update(string)
+            digest = base64.urlsafe_b64encode(m.digest())
+        else:
+            digest = base64.urlsafe_b64encode(string)
+        return digest
 
 
 @click.group(invoke_without_command=True)
@@ -185,6 +217,7 @@ def _load_config(config):
     return _config
 
 
+@memoize
 def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
     if auth_type.lower() == "digest":
         auth = requests.auth.HTTPDigestAuth(username, password)
@@ -200,6 +233,7 @@ def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
     return r.json()["data"]["hostgrouplist"]
 
 
+@memoize
 def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -219,6 +253,7 @@ def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgrou
     return r.json()["data"]["hostgroup"]["members"]
 
 
+@memoize
 def _retrive_host_notifications(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -242,6 +277,7 @@ def _retrive_host_notifications(url="", username="", password="", auth_type="bas
     return sorted(host_list)
 
 
+@memoize
 def _retrive_service_notifications_by_hostgroup(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -285,6 +321,7 @@ def _retrive_service_notifications_by_hostgroup(url="", username="", password=""
     return sorted(host_list)
 
 
+@memoize
 def _retrive_host_notification(url="", username="", password="", auth_type="basic", host=None):
     logger.debug("host: %s", host)
     if not host:
@@ -306,6 +343,7 @@ def _retrive_host_notification(url="", username="", password="", auth_type="basi
     return json.loads(r.text)["data"]["host"]["notifications_enabled"]
 
 
+@memoize
 def _retrive_service_notifications_by_host(url="", username="", password="", auth_type="basic", host=None):
     logger.debug("host: %s", host)
     if not host:
