@@ -21,19 +21,30 @@ logger = getLogger(__name__)
 
 
 def memoize(function):
-    cachefile = './nagiosctl.cache'
+    cachefile = "./nagiosctl.cache"
+    ttl = 600
 
     def _memoize(*args, **kw):
         key = _get_key(function, *args, **kw)
         storage = shelve.open(cachefile)
         value = None
         if key in storage:
-            value = storage[key]
-        else:
-            value = storage[key] = function(*args, **kw)
+            is_expired = _check_expired(storage[key]["created_at"], ttl)
+            if not is_expired:
+                value = storage[key]["result"]
+                storage.close()
+                return value
+        value = function(*args, **kw)
+        now = time.time()
+        storage[key] = {"result": value, "created_at": now}
         storage.close()
         return value
     return _memoize
+
+
+def _check_expired(created_at, ttl):
+    now = time.time()
+    return (created_at + ttl) < now
 
 
 def _get_key(function, *args, **kw):
