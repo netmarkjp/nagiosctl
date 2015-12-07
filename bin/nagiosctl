@@ -142,10 +142,9 @@ def restore_notification(config, infile):
 
 @cli.command()
 @click.option("-c", "--config", type=click.File("r"), default="config.yml")
-@click.option("-o", "--output", type=click.File("w"), default="-")
 @click.argument("hostgroup", nargs=1)
 @click.argument("host", nargs=-1)
-def disable_notification(config, output, hostgroup, host):
+def disable_notification(config, hostgroup, host):
     _config = _load_config(config)
     for nagios in _config["nagios"]:
         if host:
