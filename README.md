@@ -10,6 +10,7 @@ wip
 - ``nagiosctl list_host HOSTGROUP``
 - ``nagiosctl save_notification HOSTGROUP [HOST]...``
 - ``nagiosctl restore_notification``
+- ``nagiosctl enable_notification HOSTGROUP [HOST]...``
 - ``nagiosctl disable_notification HOSTGROUP [HOST]...``
 
 # Requirement

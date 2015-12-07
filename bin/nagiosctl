@@ -171,6 +171,37 @@ def disable_notification(config, hostgroup, host):
                                                                  hostgroup=hostgroup)
 
 
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.argument("hostgroup", nargs=1)
+@click.argument("host", nargs=-1)
+def enable_notification(config, hostgroup, host):
+    _config = _load_config(config)
+    for nagios in _config["nagios"]:
+        if host:
+            # specified host
+            for h in host:
+                _enable_notifications_for_all_services_on_host(url=nagios["url"],
+                                                                username=nagios[
+                                                                    "username"],
+                                                                password=nagios[
+                                                                    "password"],
+                                                                auth_type=nagios[
+                                                                    "auth_type"],
+                                                                host=h)
+
+        else:
+            # hostgroup
+            _enable_notifications_for_all_services_on_hostgroup(url=nagios["url"],
+                                                                 username=nagios[
+                                                                     "username"],
+                                                                 password=nagios[
+                                                                     "password"],
+                                                                 auth_type=nagios[
+                                                                     "auth_type"],
+                                                                 hostgroup=hostgroup)
+
+
 def _load_config(config):
     _config = yaml.load(config)
 
@@ -371,6 +402,50 @@ def _disable_notifications_for_all_services_on_host(url="", username="", passwor
     payload = {"query": "servicelist",
                "hostname": host, "details": "true"}
     data = {"cmd_typ": 29, "cmd_mod": 2, "host": host, "ahas": 1}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _enable_notifications_for_all_services_on_hostgroup(url="", username="", password="", auth_type="basic", hostgroup=None):
+    logger.debug("hostgroup: %s", hostgroup)
+    if not hostgroup:
+        logger.error("ERROR: hostgroup required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostname": host, "details": "true"}
+    data = {"cmd_typ": 63, "cmd_mod": 2, "hostgroup": hostgroup, "ahas": 1}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _enable_notifications_for_all_services_on_host(url="", username="", password="", auth_type="basic", host=None):
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: host required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostname": host, "details": "true"}
+    data = {"cmd_typ": 28, "cmd_mod": 2, "host": host, "ahas": 1}
     logger.debug("post to %s", full_url)
     r = requests.post(full_url, data=data, auth=auth)
     if r.status_code != 200:
