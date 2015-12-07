@@ -357,6 +357,28 @@ def _disable_notifications_for_all_services_on_hostgroup(url="", username="", pa
     return r.status_code
 
 
+def _disable_notifications_for_all_services_on_host(url="", username="", password="", auth_type="basic", host=None):
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: host required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    payload = {"query": "servicelist",
+               "hostname": host, "details": "true"}
+    data = {"cmd_typ": 29, "cmd_mod": 2, "host": host, "ahas": 1}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
 def _generate_nagios_command_string(data):
     command_string = []
     t = int(time.mktime(datetime.datetime.now().timetuple()))
