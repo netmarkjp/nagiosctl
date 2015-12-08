@@ -20,26 +20,26 @@ import base64
 logger = getLogger(__name__)
 
 
-def memoize(function):
-    cachefile = "./nagiosctl.cache"
-    ttl = 600
-
-    def _memoize(*args, **kw):
-        key = _get_key(function, *args, **kw)
-        storage = shelve.open(cachefile)
-        value = None
-        if key in storage:
-            is_expired = _check_expired(storage[key]["created_at"], ttl)
-            if not is_expired:
-                value = storage[key]["result"]
-                storage.close()
-                return value
-        value = function(*args, **kw)
-        now = time.time()
-        storage[key] = {"result": value, "created_at": now}
-        storage.close()
-        return value
-    return _memoize
+def _memoize(ttl, nocache):
+    def _memoize_decorator(function):
+        def _func_wrapper(*args, **kw):
+            cachefile = "./nagiosctl.cache"
+            key = _get_key(function, *args, **kw)
+            storage = shelve.open(cachefile)
+            value = None
+            if key in storage and not nocache:
+                is_expired = _check_expired(storage[key]["created_at"], ttl)
+                if not is_expired:
+                    value = storage[key]["result"]
+                    storage.close()
+                    return value
+            value = function(*args, **kw)
+            now = time.time()
+            storage[key] = {"result": value, "created_at": now}
+            storage.close()
+            return value
+        return _func_wrapper
+    return _memoize_decorator
 
 
 def _check_expired(created_at, ttl):
@@ -68,27 +68,33 @@ def cli(ctx):
 
 @cli.command()
 @click.option("-c", "--config", type=click.File("r"), default="config.yml")
-def list_hostgroup(config):
+@click.option("-t", "--ttl", default=60)
+@click.option("--nocache", is_flag=True)
+def list_hostgroup(config, ttl, nocache):
     _config = _load_config(config)
     nagios = _config["nagios"][0]
-    for hostgroup in _retrive_hostgroups(url=nagios["url"],
-                                         username=nagios["username"],
-                                         password=nagios["password"],
-                                         auth_type=nagios["auth_type"]):
+    for hostgroup in _memoize(ttl, nocache)(_retrive_hostgroups)(
+            url=nagios["url"],
+            username=nagios["username"],
+            password=nagios["password"],
+            auth_type=nagios["auth_type"]):
         print hostgroup
 
 
 @cli.command()
 @click.option("-c", "--config", type=click.File("r"), default="config.yml")
 @click.argument("hostgroup", nargs=1)
-def list_host(config, hostgroup):
+@click.option("-t", "--ttl", default=60)
+@click.option("--nocache", is_flag=True)
+def list_host(config, hostgroup, ttl, nocache):
     _config = _load_config(config)
     nagios = _config["nagios"][0]
-    for host in _retrive_hosts(url=nagios["url"],
-                               username=nagios["username"],
-                               password=nagios["password"],
-                               auth_type=nagios["auth_type"],
-                               hostgroup=hostgroup):
+    for host in _memoize(ttl, nocache)(_retrive_hosts)(
+            url=nagios["url"],
+            username=nagios["username"],
+            password=nagios["password"],
+            auth_type=nagios["auth_type"],
+            hostgroup=hostgroup):
         print host
 
 
@@ -228,7 +234,6 @@ def _load_config(config):
     return _config
 
 
-@memoize
 def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
     if auth_type.lower() == "digest":
         auth = requests.auth.HTTPDigestAuth(username, password)
@@ -244,7 +249,6 @@ def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
     return r.json()["data"]["hostgrouplist"]
 
 
-@memoize
 def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -264,7 +268,6 @@ def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgrou
     return r.json()["data"]["hostgroup"]["members"]
 
 
-@memoize
 def _retrive_host_notifications(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -288,7 +291,6 @@ def _retrive_host_notifications(url="", username="", password="", auth_type="bas
     return sorted(host_list)
 
 
-@memoize
 def _retrive_service_notifications_by_hostgroup(url="", username="", password="", auth_type="basic", hostgroup=None):
     logger.debug("hostgroup: %s", hostgroup)
     if not hostgroup:
@@ -332,7 +334,6 @@ def _retrive_service_notifications_by_hostgroup(url="", username="", password=""
     return sorted(host_list)
 
 
-@memoize
 def _retrive_host_notification(url="", username="", password="", auth_type="basic", host=None):
     logger.debug("host: %s", host)
     if not host:
@@ -354,7 +355,6 @@ def _retrive_host_notification(url="", username="", password="", auth_type="basi
     return json.loads(r.text)["data"]["host"]["notifications_enabled"]
 
 
-@memoize
 def _retrive_service_notifications_by_host(url="", username="", password="", auth_type="basic", host=None):
     logger.debug("host: %s", host)
     if not host:
