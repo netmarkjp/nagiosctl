@@ -23,7 +23,13 @@ wip
 
 # Install
 
-TODO
+```
+git clone https://github.com/netmarkjp/nagiosctl
+pip install -r requirements.txt
+
+cp config.yml.example config.yml
+vim config.yml # edit
+```
 
 # Usage
 
