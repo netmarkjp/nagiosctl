@@ -274,7 +274,7 @@ def _retrive_hostgroups(url="", username="", password="", auth_type="basic"):
     full_url = "%scgi-bin/objectjson.cgi" % (url)
     payload = {"query": "hostgrouplist", "details": "false"}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json.", r.text)
     return r.json()["data"]["hostgrouplist"]
@@ -293,7 +293,7 @@ def _retrive_hosts(url="", username="", password="", auth_type="basic", hostgrou
     full_url = "%scgi-bin/objectjson.cgi" % (url)
     payload = {"query": "hostgroup", "hostgroup": hostgroup}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json.", r.text)
     return r.json()["data"]["hostgroup"]["members"]
@@ -312,7 +312,7 @@ def _retrive_host_notifications(url="", username="", password="", auth_type="bas
     full_url = "%scgi-bin/statusjson.cgi" % (url)
     payload = {"query": "hostlist", "hostgroup": hostgroup, "details": "true"}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json.", r.text)
     host_list = []
@@ -336,7 +336,7 @@ def _retrive_service_notifications_by_hostgroup(url="", username="", password=""
     payload = {"query": "servicelist",
                "hostgroup": hostgroup, "details": "true"}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
         hosts = _retrive_hosts(url, username, password, auth_type, hostgroup)
@@ -378,7 +378,7 @@ def _retrive_host_notification(url="", username="", password="", auth_type="basi
     full_url = "%scgi-bin/statusjson.cgi" % (url)
     payload = {"query": "host", "hostname": host}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
         return
@@ -400,7 +400,7 @@ def _retrive_service_notifications_by_host(url="", username="", password="", aut
     payload = {"query": "servicelist",
                "hostname": host, "details": "true"}
     logger.debug("retriving from %s", full_url)
-    r = requests.get(full_url, params=payload, auth=auth)
+    r = requests.get(full_url, params=payload, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
         return
@@ -427,11 +427,9 @@ def _disable_notifications_for_all_services_on_hostgroup(url="", username="", pa
         auth = requests.auth.HTTPBasicAuth(username, password)
 
     full_url = "%scgi-bin/cmd.cgi" % (url)
-    payload = {"query": "servicelist",
-               "hostname": host, "details": "true"}
     data = {"cmd_typ": 64, "cmd_mod": 2, "hostgroup": hostgroup, "ahas": 1}
     logger.debug("post to %s", full_url)
-    r = requests.post(full_url, data=data, auth=auth)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
 
@@ -449,11 +447,9 @@ def _disable_notifications_for_all_services_on_host(url="", username="", passwor
         auth = requests.auth.HTTPBasicAuth(username, password)
 
     full_url = "%scgi-bin/cmd.cgi" % (url)
-    payload = {"query": "servicelist",
-               "hostname": host, "details": "true"}
     data = {"cmd_typ": 29, "cmd_mod": 2, "host": host, "ahas": 1}
     logger.debug("post to %s", full_url)
-    r = requests.post(full_url, data=data, auth=auth)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
 
@@ -471,11 +467,9 @@ def _enable_notifications_for_all_services_on_hostgroup(url="", username="", pas
         auth = requests.auth.HTTPBasicAuth(username, password)
 
     full_url = "%scgi-bin/cmd.cgi" % (url)
-    payload = {"query": "servicelist",
-               "hostname": host, "details": "true"}
     data = {"cmd_typ": 63, "cmd_mod": 2, "hostgroup": hostgroup, "ahas": 1}
     logger.debug("post to %s", full_url)
-    r = requests.post(full_url, data=data, auth=auth)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
 
@@ -493,11 +487,9 @@ def _enable_notifications_for_all_services_on_host(url="", username="", password
         auth = requests.auth.HTTPBasicAuth(username, password)
 
     full_url = "%scgi-bin/cmd.cgi" % (url)
-    payload = {"query": "servicelist",
-               "hostname": host, "details": "true"}
     data = {"cmd_typ": 28, "cmd_mod": 2, "host": host, "ahas": 1}
     logger.debug("post to %s", full_url)
-    r = requests.post(full_url, data=data, auth=auth)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
     if r.status_code != 200:
         logger.error("ERROR: fail to retrive json. %s", r.text)
 
