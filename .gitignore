@@ -63,3 +63,6 @@ target/
 tmp
 temp
 config.yml
+
+# Cache file
+*.cache
