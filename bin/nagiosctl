@@ -3,6 +3,7 @@
 
 
 from logging import DEBUG
+from logging import INFO
 from logging import StreamHandler
 from logging import getLogger
 import click
@@ -252,6 +253,30 @@ def enable_notification(config, hostgroup, host):
                                                                  hostgroup=hostgroup)
 
 
+@cli.command()
+@click.option("-c", "--config", type=click.File("r"), default="config.yml")
+@click.argument("hostgroup", nargs=1)
+@click.argument("host", nargs=-1)
+def disable_active_check(config, hostgroup, host):
+    _config = _load_config(config)
+    for nagios in _config["nagios"]:
+        logger.info("nagios: %s", nagios["url"])
+        if host:
+            # specified host
+            for h in host:
+                logger.info("host: %s", h)
+                _disable_activecheck_for_all_services_on_host(
+                        url=nagios["url"],
+                        username=nagios["username"],
+                        password=nagios["password"],
+                        auth_type=nagios["auth_type"],
+                        host=h)
+
+        else:
+            pass
+            # TODO
+
+
 def _load_config(config):
     _config = yaml.load(config)
 
@@ -260,6 +285,10 @@ def _load_config(config):
     if debug:
         handler.setLevel(DEBUG)
         logger.setLevel(DEBUG)
+    else:
+        handler.setLevel(INFO)
+        logger.setLevel(INFO)
+
     logger.addHandler(handler)
 
     return _config
@@ -522,6 +551,90 @@ def _generate_nagios_command_string(data):
                     command_string.append(
                         "[%s] DISABLE_SVC_NOTIFICATIONS;%s;%s" % (t, hostname, servicename))
     return "\n".join(command_string)
+
+
+def _disable_checks_of_all_services_on_this_host(url="", username="", password="", auth_type="basic", host=None):
+
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: host required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    data = {"cmd_typ": 16, "cmd_mod": 2, "host": host,
+            "ahas": "on", "btnSubmit": "Commit"}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _submit_passive_check_result_to_host(url="", username="", password="", auth_type="basic", host=None, check_result=0, check_output="passive"):
+
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: host required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    data = {"cmd_typ": 87, "cmd_mod": 2, "host": host, "plugin_state": check_result,
+            "plugin_output": check_output, "performance_data": "", "btnSubmit": "Commit"}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _submit_passive_check_result_to_service(url="", username="", password="", auth_type="basic", host=None, service=None, check_result=0, check_output="passive"):
+
+    logger.debug("host: %s", host)
+    if not host:
+        logger.error("ERROR: host required.")
+        return
+    if auth_type.lower() == "digest":
+        auth = requests.auth.HTTPDigestAuth(username, password)
+    else:
+        auth = requests.auth.HTTPBasicAuth(username, password)
+
+    full_url = "%scgi-bin/cmd.cgi" % (url)
+    data = {"cmd_typ": 30, "cmd_mod": 2, "host": host, "service": service, "plugin_state": check_result,
+            "plugin_output": check_output, "performance_data": "", "btnSubmit": "Commit"}
+    logger.debug("post to %s", full_url)
+    r = requests.post(full_url, data=data, auth=auth, verify=False)
+    if r.status_code != 200:
+        logger.error("ERROR: fail to retrive json. %s", r.text)
+
+    return r.status_code
+
+
+def _disable_activecheck_for_all_services_on_host(url="", username="", password="", auth_type="basic", host=None):
+    # Disable checks of all services on this host ( disable host too )
+    _disable_checks_of_all_services_on_this_host(
+        url=url, username=username, password=password, auth_type=auth_type, host=host)
+
+    # submit passive results for host
+    _submit_passive_check_result_to_host(
+        url=url, username=username, password=password, auth_type=auth_type, host=host)
+
+    # submit passive results for each service
+    services = _retrive_service_notifications_by_host(
+        url=url, username=username, password=password, auth_type=auth_type, host=host)
+    keys = [i.keys()[0] for i in services]
+    for key in keys:
+        _submit_passive_check_result_to_service(
+            url=url, username=username, password=password, auth_type=auth_type, host=host, service=key)
 
 if __name__ == "__main__":
     cli()
