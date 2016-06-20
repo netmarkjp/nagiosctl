@@ -12,6 +12,7 @@ wip
 - ``nagiosctl restore_notification``
 - ``nagiosctl enable_notification HOSTGROUP [HOST]...``
 - ``nagiosctl disable_notification HOSTGROUP [HOST]...``
+- ``nagiosctl disable_active_check HOSTGROUP HOST [HOST]...``
 
 # Requirement
 
