@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="nagiosctl",
-    version="1.0.0",
+    version="1.1.0",
     description="control multiple nagios",
     author="Toshiaki Baba",
     author_email="toshiaki@netmark.jp",
